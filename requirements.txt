@@ -1,5 +1,11 @@
 langchain
 langchain-community
+langchain-core
+langchain-gigachat
+langgraph
 requests
 python-dotenv
 gigachat
+python-telegram-bot
+chromadb
+sentence-transformers

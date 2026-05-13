@@ -6,9 +6,6 @@ import os
 
 load_dotenv()
 
-
-# --- Обработчики команд ---
-
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         "👋 Привет! Я ИИ-агент для анализа научной литературы.\n\n"
@@ -61,7 +58,6 @@ async def free_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("🤔 Думаю над ответом...")
     try:
         answer = run_agent(user_input)
-        # Telegram ограничивает сообщения 4096 символами
         if len(answer) > 4096:
             answer = answer[:4090] + "..."
         await update.message.reply_text(answer)
