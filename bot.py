@@ -181,66 +181,106 @@ async def search_got_type(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     period = ""
     if year_from and year_to:
-        period = f"{year_from}–{year_to}"
+        period = str(year_from) + "-" + str(year_to)
     elif year_from:
-        period = f"с {year_from}"
+        period = "с " + str(year_from)
     elif year_to:
-        period = f"до {year_to}"
+        period = "до " + str(year_to)
 
     sort_labels = {"relevance": "по релевантности", "date": "по дате", "citations": "по цитированиям"}
     type_labels = {"default": "все статьи", "survey": "только обзорные"}
 
-    # Предупреждение если комбинация параметров может быть медленной
     warn = ""
     if sort_by == "citations" and limit > 10:
         warn = "\n⚠️ Сортировка по цитированиям может занять до 2 минут."
 
     msg = await update.message.reply_text(
-        f"🔍 Параметры поиска:\n"
-        f"  Тема: {query}\n"
-        f"  Количество: {limit}\n"
-        f"  Период: {period or 'любой'}\n"
-        f"  Сортировка: {sort_labels[sort_by]}\n"
-        f"  Тип: {type_labels[search_type]}\n\n"
-        f"Ищу, подожди...{warn}",
+        "🔍 Параметры поиска:\n"
+        "  Тема: " + query + "\n"
+        "  Количество: " + str(limit) + "\n"
+        "  Период: " + (period or "любой") + "\n"
+        "  Сортировка: " + sort_labels[sort_by] + "\n"
+        "  Тип: " + type_labels[search_type] + "\n\n"
+        "Ищу, подожди..." + warn,
         reply_markup=ReplyKeyboardRemove()
     )
 
-    filters_parts = [f"year_from={year_from}"] if year_from else []
-    if year_to:
-        filters_parts.append(f"year_to={year_to}")
-    filters_parts += [f"sort_by={sort_by}", f"search_type={search_type}"]
-    prompt = f"Find {limit} scientific papers about: {query} | {limit} | " + " | ".join(filters_parts)
-
     user_id = get_user_id(update)
+
+    # Вызываем search_papers напрямую — без агента
+    from tools.search import search_papers
+    from tools.storage import save_papers
+
     loop = asyncio.get_event_loop()
     try:
-        answer = await asyncio.wait_for(
-            loop.run_in_executor(None, lambda: run_agent(prompt, user_id=user_id)),
+        papers = await asyncio.wait_for(
+            loop.run_in_executor(None, lambda: search_papers(
+                query=query,
+                limit=limit,
+                year_from=year_from,
+                year_to=year_to,
+                sort_by=sort_by,
+                search_type=search_type
+            )),
             timeout=SEARCH_TIMEOUT
         )
-        if len(answer) > 3800:
-            answer = answer[:3800] + "\n\n📥 Полный список — /export"
-        text = answer + "\n\n💡 Уточни: /refine <запрос>"
+
+        if not papers or "error" in papers[0]:
+            err = papers[0].get("error", "неизвестная ошибка") if papers else "нет результатов"
+            result_text = "❌ Статьи не найдены: " + err
+        else:
+            # Сохраняем в базу
+            saved = save_papers(papers, query=query, user_id=user_id)
+
+            # Формируем список
+            filters = []
+            if year_from:
+                filters.append("с " + str(year_from))
+            if year_to:
+                filters.append("по " + str(year_to))
+            filters.append(sort_labels[sort_by])
+            if search_type == "survey":
+                filters.append("только обзорные")
+
+            lines = ["Найдено: " + str(len(papers)) + " статей (" + ", ".join(f for f in filters if f) + "), сохранено: " + str(saved) + "\n"]
+
+            compact = len(papers) > 15
+            for i, p in enumerate(papers, 1):
+                cite_info = " | " + str(p.get("citations", 0)) + " цит." if sort_by == "citations" else ""
+                if compact:
+                    lines.append(str(i) + ". [" + p.get("source", "") + "] " + p["title"] + " (" + str(p["year"]) + ")" + cite_info + "\n   " + p["link"])
+                else:
+                    lines.append(
+                        str(i) + ". [" + p.get("source", "") + "] " + p["title"] + " (" + str(p["year"]) + ")" + cite_info + "\n"
+                        "   Авторы: " + ", ".join(p["authors"]) + "\n"
+                        "   " + p["abstract"][:100] + "...\n"
+                        "   " + p["link"]
+                    )
+
+            result_text = "\n\n".join(lines)
+
+        if len(result_text) > 3800:
+            result_text = result_text[:3800] + "\n\n📥 Полный список — /export"
+
+        result_text += "\n\n💡 Уточни: /refine <запрос>"
+
         try:
-            await msg.edit_text(text)
+            await msg.edit_text(result_text)
         except Exception:
-            await update.message.reply_text(text)
+            await update.message.reply_text(result_text)
+
     except asyncio.TimeoutError:
-        text = (
-            f"⏱ Поиск занял больше {SEARCH_TIMEOUT} секунд и был прерван.\n\n"
-            f"Попробуй:\n{timeout_tip(sort_by, limit)}"
-        )
+        t = "⏱ Поиск занял слишком долго.\n\n" + timeout_tip(sort_by, limit)
         try:
-            await msg.edit_text(text)
+            await msg.edit_text(t)
         except Exception:
-            await update.message.reply_text(text)
+            await update.message.reply_text(t)
     except Exception as e:
-        text = f"Ошибка: {e}"
+        t = "Ошибка: " + str(e)
         try:
-            await msg.edit_text(text)
+            await msg.edit_text(t)
         except Exception:
-            await update.message.reply_text(text)
+            await update.message.reply_text(t)
 
     await update.message.reply_text("Что делаем дальше?", reply_markup=get_main_keyboard())
     return ConversationHandler.END
@@ -287,7 +327,7 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def analyze_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = " ".join(context.args)
+    query = " ".join(context.args) if context.args else ""
     if not query:
         await update.message.reply_text(
             "Укажи тему: /analyze <тема>\n\nПример: /analyze platform capitalism",
@@ -296,30 +336,71 @@ async def analyze_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     user_id = get_user_id(update)
     msg = await update.message.reply_text("📊 Анализирую тему и сохраняю статьи в базу...")
+
+    from tools.analyze import analyze_topic
+    from tools.search import search_papers
+    from tools.storage import save_papers
+
     loop = asyncio.get_event_loop()
     try:
+        def _do_analyze():
+            # 1. Анализ темы
+            result = analyze_topic(query)
+
+            # 2. Сохраняем статьи в базу для /suggest
+            papers = search_papers(query=query, limit=20, sort_by="relevance")
+            saved = 0
+            if papers and "error" not in papers[0]:
+                saved = save_papers(papers, query=query, user_id=user_id)
+
+            # 3. Формируем ответ
+            signals = "\n".join("  - " + s for s in result["signals"]) or "  - признаков не выявлено"
+
+            text = (
+                "📊 Анализ темы: " + result["query"] + "\n\n"
+                "Источник данных: " + result["source"] + "\n"
+                "Всего публикаций: " + str(result["total_papers"]) + "\n"
+                "За последние 5 лет: " + str(result["papers_last_5_years"]) + "\n"
+                "За последний год: " + str(result["papers_last_year"]) + "\n"
+                "Обзорных статей: " + str(result["survey_papers"]) + "\n\n"
+                "Признаки:\n" + signals + "\n\n"
+                "Оценка: " + str(result["score"]) + "/8\n"
+                "Вывод: " + result["verdict"] + "\n\n"
+                "Сохранено в базу: " + str(saved) + " статей"
+            )
+            return text
+
         answer = await asyncio.wait_for(
-            loop.run_in_executor(
-                None,
-                lambda: run_agent(f"Analyze how well-studied this topic is: {query}", user_id=user_id)
-            ),
+            loop.run_in_executor(None, _do_analyze),
             timeout=SEARCH_TIMEOUT
         )
-        await safe_edit(msg, answer, fallback=update.message.reply_text)
+
+        try:
+            await msg.edit_text(answer)
+        except Exception:
+            await update.message.reply_text(answer)
+
         stats = get_stats(user_id=user_id)
         if stats["total"] > 0:
             await update.message.reply_text(
-                f"✅ Статьи сохранены в базу ({stats['total']} шт.)\n\n"
-                f"💡 Хочешь найти смежные незанятые ниши? Нажми /suggest",
+                "✅ Статьи сохранены в базу (" + str(stats["total"]) + " шт.)\n\n"
+                "💡 Хочешь найти смежные незанятые ниши? Нажми /suggest",
                 reply_markup=get_main_keyboard()
             )
         else:
             await update.message.reply_text("Что делаем дальше?", reply_markup=get_main_keyboard())
+
     except asyncio.TimeoutError:
-        await safe_edit(msg, "⏱ Превышено время ожидания. Попробуй снова.", fallback=update.message.reply_text)
+        try:
+            await msg.edit_text("⏱ Превышено время ожидания. Попробуй снова.")
+        except Exception:
+            await update.message.reply_text("⏱ Превышено время ожидания. Попробуй снова.")
         await update.message.reply_text("Попробуй ещё раз:", reply_markup=get_main_keyboard())
     except Exception as e:
-        await safe_edit(msg, f"Ошибка: {e}", fallback=update.message.reply_text)
+        try:
+            await msg.edit_text("Ошибка: " + str(e))
+        except Exception:
+            await update.message.reply_text("Ошибка: " + str(e))
         await update.message.reply_text("Попробуй ещё раз:", reply_markup=get_main_keyboard())
 
 
@@ -375,7 +456,7 @@ async def suggest_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except Exception:
             await update.message.reply_text(answer)
         await update.message.reply_text(
-            "Заинтересовала тема? Используй /search чтобы найти статьи по ней.",
+            "Заинтересовала тема? Нажми /search и введи название темы из списка выше.\n\nНапример: /search Algorithmic Bias and Fairness in AI Platforms 15",
             reply_markup=get_main_keyboard()
         )
     except asyncio.TimeoutError:

@@ -136,11 +136,10 @@ def search_papers(query: str, limit: int = 5,
     if search_type == "survey":
         query = f"{query} survey review"
 
-    # Выбираем сортировку для OpenAlex
+    # Для OpenAlex всегда ищем по релевантности — потом сортируем сами
+    # (сортировка по дате в OpenAlex даёт нерелевантные результаты)
     if sort_by == "citations":
         oa_sort = "cited_by_count:desc"
-    elif sort_by == "date":
-        oa_sort = "publication_date:desc"
     else:
         oa_sort = "relevance_score:desc"
 
