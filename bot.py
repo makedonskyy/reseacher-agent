@@ -39,6 +39,13 @@ BUTTON_HINTS = {
     ),
 }
 
+PENDING_ACTION_KEY = "pending_action"
+PENDING_REFINE = "refine"
+PENDING_SUGGEST = "suggest"
+PENDING_ANALYZE = "analyze"
+PENDING_SUMMARY = "summary"
+PENDING_EXPORT = "export"
+
 
 async def safe_edit(msg, text: str, fallback=None):
     """Редактирует сообщение. Если не удаётся — отправляет через fallback или reply_text."""
@@ -69,8 +76,15 @@ def get_main_keyboard():
 
 async def handle_menu_button(update: Update, context: ContextTypes.DEFAULT_TYPE, button: str):
     if button in BUTTON_HINTS:
+        if button == BTN_REFINE:
+            context.user_data[PENDING_ACTION_KEY] = PENDING_REFINE
+        elif button == BTN_ANALYZE:
+            context.user_data[PENDING_ACTION_KEY] = PENDING_ANALYZE
+        else:
+            context.user_data.pop(PENDING_ACTION_KEY, None)
         await update.message.reply_text(BUTTON_HINTS[button], reply_markup=get_main_keyboard())
         return
+    context.user_data.pop(PENDING_ACTION_KEY, None)
     if button == BTN_SEARCH:
         await search_start(update, context)
     elif button == BTN_SUGGEST:
@@ -372,11 +386,18 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def analyze_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = " ".join(context.args) if context.args else ""
     if not query:
+        context.user_data[PENDING_ACTION_KEY] = PENDING_ANALYZE
         await update.message.reply_text(
             "Укажи тему: /analyze <тема>\n\nПример: /analyze platform capitalism",
             reply_markup=get_main_keyboard()
         )
         return
+
+    context.user_data.pop(PENDING_ACTION_KEY, None)
+    await run_analyze(update, context, query)
+
+
+async def run_analyze(update: Update, context: ContextTypes.DEFAULT_TYPE, query: str):
     user_id = get_user_id(update)
     msg = await update.message.reply_text("📊 Анализирую тему и сохраняю статьи в базу...")
 
@@ -387,16 +408,13 @@ async def analyze_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     loop = asyncio.get_event_loop()
     try:
         def _do_analyze():
-            # 1. Анализ темы
             result = analyze_topic(query)
 
-            # 2. Сохраняем статьи в базу для /suggest
             papers = search_papers(query=query, limit=20, sort_by="relevance")
             saved = 0
             if papers and "error" not in papers[0]:
                 saved = save_papers(papers, query=query, user_id=user_id)
 
-            # 3. Формируем ответ
             signals = "\n".join("  - " + s for s in result["signals"]) or "  - признаков не выявлено"
 
             text = (
@@ -448,10 +466,8 @@ async def analyze_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def suggest_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = get_user_id(update)
-    args = context.args or []
-    topic = " ".join(args).strip()
-    stats = get_stats(user_id=user_id)
+    topic = " ".join(context.args or []).strip()
+    stats = get_stats(user_id=get_user_id(update))
 
     if stats["total"] == 0:
         await update.message.reply_text(
@@ -464,11 +480,20 @@ async def suggest_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         queries = stats.get("queries", [])
         ql = "\n".join("  - " + q for q in queries)
         text = "Укажи тему или all:\n\n/suggest all - по всем статьям\n/suggest <тема> - по теме\n\nТемы в базе:\n" + ql
+        context.user_data[PENDING_ACTION_KEY] = PENDING_SUGGEST
         await update.message.reply_text(text, reply_markup=get_main_keyboard())
         return
 
+    context.user_data.pop(PENDING_ACTION_KEY, None)
+    await run_suggest(update, context, topic)
+
+
+async def run_suggest(update: Update, context: ContextTypes.DEFAULT_TYPE, topic: str):
+    user_id = get_user_id(update)
+    stats = get_stats(user_id=user_id)
+
     if topic == "all":
-        papers = None  # suggest_topics возьмёт все статьи пользователя
+        papers = None
         count = stats["total"]
         label = "всем статьям"
     else:
@@ -532,28 +557,64 @@ async def refine_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         limit = 10
         query = " ".join(args)
 
+    await run_refine(update, context, query, limit)
+
+
+async def run_refine(update: Update, context: ContextTypes.DEFAULT_TYPE, query: str, limit: int):
     user_id = get_user_id(update)
     stats = get_stats(user_id=user_id)
     msg = await update.message.reply_text(
         f"🔎 Уточняю: «{query}» ({limit} статей)\n"
         f"Статей в базе: {stats.get('total', 0)}"
     )
+
+    from tools.search import search_papers
+    from tools.storage import save_papers
+
     loop = asyncio.get_event_loop()
     try:
-        prev = stats.get("queries", [])
-        ctx = f"Previous searches: {', '.join(prev[:3])}. " if prev else ""
-        prompt = f"{ctx}Find {limit} more papers about: {query} | {limit}"
-        answer = await asyncio.wait_for(
-            loop.run_in_executor(None, lambda: run_agent(prompt, user_id=user_id)),
+        papers = await asyncio.wait_for(
+            loop.run_in_executor(None, lambda: search_papers(
+                query=query,
+                limit=limit,
+                sort_by="relevance",
+            )),
             timeout=SEARCH_TIMEOUT
         )
+
+        if not papers or "error" in papers[0]:
+            err = papers[0].get("error", "неизвестная ошибка") if papers else "нет результатов"
+            result_text = f"❌ Статьи не найдены: {err}"
+            added = 0
+        else:
+            save_papers(papers, query=query, user_id=user_id)
+            new_stats = get_stats(user_id=user_id)
+            added = new_stats.get("total", 0) - stats.get("total", 0)
+
+            lines = [f"Найдено: {len(papers)} статей, новых в базе: +{added}\n"]
+            compact = len(papers) > 15
+            for i, p in enumerate(papers, 1):
+                if compact:
+                    lines.append(
+                        f"{i}. [{p.get('source', '')}] {p['title']} ({p['year']})\n"
+                        f"   {p['link']}"
+                    )
+                else:
+                    lines.append(
+                        f"{i}. [{p.get('source', '')}] {p['title']} ({p['year']})\n"
+                        f"   Авторы: {', '.join(p['authors'])}\n"
+                        f"   {p['abstract'][:100]}...\n"
+                        f"   {p['link']}"
+                    )
+            result_text = "\n\n".join(lines)
+
+        if len(result_text) > 3500:
+            result_text = result_text[:3500] + "\n\n📥 Полный список — /export"
+
         new_stats = get_stats(user_id=user_id)
-        added = new_stats.get("total", 0) - stats.get("total", 0)
-        if len(answer) > 3500:
-            answer = answer[:3500] + "..."
         await safe_edit(
             msg,
-            f"{answer}\n\n📊 Добавлено: +{added} (всего {new_stats.get('total', 0)})\n📥 /export",
+            f"{result_text}\n\n📊 Добавлено: +{added} (всего {new_stats.get('total', 0)})\n📥 /export",
             fallback=update.message.reply_text,
         )
         await update.message.reply_text("Что делаем дальше?", reply_markup=get_main_keyboard())
@@ -566,9 +627,8 @@ async def refine_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def summary_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = get_user_id(update)
     topic = " ".join(context.args).strip() if context.args else ""
-    stats = get_stats(user_id=user_id)
+    stats = get_stats(user_id=get_user_id(update))
 
     if stats["total"] == 0:
         await update.message.reply_text("📚 База пуста. Сначала /search или /analyze.", reply_markup=get_main_keyboard())
@@ -577,6 +637,7 @@ async def summary_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not topic:
         queries = stats.get("queries", [])
         queries_list = "\n".join(f"  • {q}" for q in queries)
+        context.user_data[PENDING_ACTION_KEY] = PENDING_SUMMARY
         await update.message.reply_text(
             "Укажи тему или all:\n\n"
             "/summary all — обзор всех статей\n"
@@ -586,28 +647,47 @@ async def summary_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
+    context.user_data.pop(PENDING_ACTION_KEY, None)
+    await run_summary(update, context, topic)
+
+
+async def run_summary(update: Update, context: ContextTypes.DEFAULT_TYPE, topic: str):
+    user_id = get_user_id(update)
+    stats = get_stats(user_id=user_id)
+
     if topic == "all":
-        count = stats["total"]
-        prompt = "Сделай обзор всех моих сохранённых статей"
+        from tools.storage import get_user_papers
+        papers = get_user_papers(user_id=user_id)
+        label = "все темы"
     else:
         from tools.storage import search_local
         papers = search_local(topic, n_results=20, user_id=user_id)
-        if not papers:
-            queries = stats.get("queries", [])
-            queries_list = "\n".join(f"  • {q}" for q in queries)
-            await update.message.reply_text(
-                f"❌ По теме '{topic}' ничего не найдено в базе.\n\nДоступные темы:\n{queries_list}\n\nИли используй /summary all",
-                reply_markup=get_main_keyboard()
-            )
-            return
-        count = len(papers)
-        papers_text = "\n".join([
-            f"- {p['title']} ({p['year']}, {p['source']})"
-            for p in papers
-        ])
-        prompt = (
-            f"Вот {count} статей из базы по теме '{topic}':\n\n{papers_text}\n\nСоставь краткий обзор на русском: выдели основные темы, тенденции и пробелы."
+        label = topic
+
+    if not papers:
+        queries = stats.get("queries", [])
+        queries_list = "\n".join(f"  • {q}" for q in queries)
+        await update.message.reply_text(
+            f"❌ По теме '{topic}' ничего не найдено в базе.\n\nДоступные темы:\n{queries_list}\n\nИли используй /summary all",
+            reply_markup=get_main_keyboard()
         )
+        return
+
+    count = len(papers)
+    shown = papers[:30]
+    papers_text = "\n".join(
+        f"- {p['title']} ({p['year']}, {p['source']})"
+        for p in shown
+    )
+    if count > len(shown):
+        papers_text += f"\n\n(... и ещё {count - len(shown)} статей)"
+
+    prompt = (
+        f"Вот {count} статей из личной базы по теме «{label}»:\n\n"
+        f"{papers_text}\n\n"
+        f"Составь краткий обзор на русском ТОЛЬКО на основе этих статей: "
+        f"выдели основные темы, тенденции и пробелы. Не добавляй информацию вне списка."
+    )
 
     msg = await update.message.reply_text(f"📝 Генерирую обзор {count} статей...")
     from agent import _get_llm
@@ -639,9 +719,8 @@ async def summary_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def export_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = get_user_id(update)
     topic = " ".join(context.args).strip() if context.args else ""
-    stats = get_stats(user_id=user_id)
+    stats = get_stats(user_id=get_user_id(update))
 
     if stats["total"] == 0:
         await update.message.reply_text("База пуста. Сначала /search.", reply_markup=get_main_keyboard())
@@ -650,6 +729,7 @@ async def export_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not topic:
         queries = stats.get("queries", [])
         ql = chr(10).join(f"  - {q}" for q in queries)
+        context.user_data[PENDING_ACTION_KEY] = PENDING_EXPORT
         await update.message.reply_text(
             "Укажи тему или all:\n\n"
             "all — все статьи\n"
@@ -658,6 +738,14 @@ async def export_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             reply_markup=get_main_keyboard()
         )
         return
+
+    context.user_data.pop(PENDING_ACTION_KEY, None)
+    await run_export(update, context, topic)
+
+
+async def run_export(update: Update, context: ContextTypes.DEFAULT_TYPE, topic: str):
+    user_id = get_user_id(update)
+    stats = get_stats(user_id=user_id)
 
     if topic == "all":
         from tools.storage import get_user_papers
@@ -680,7 +768,6 @@ async def export_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     count = len(papers)
 
-    # Превью топ-5 в чате
     preview = [f"Найдено {count} статей по теме: {caption_topic}"]
     preview.append("Превью первых 5:")
     for i, p in enumerate(papers[:5], 1):
@@ -742,6 +829,53 @@ async def free_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if user_input in MENU_BUTTONS:
         await handle_menu_button(update, context, user_input)
+        return
+
+    if context.user_data.get(PENDING_ACTION_KEY) == PENDING_REFINE:
+        context.user_data.pop(PENDING_ACTION_KEY, None)
+        parts = user_input.split()
+        try:
+            limit = int(parts[-1])
+            limit = max(1, min(limit, 50))
+            query = " ".join(parts[:-1]).strip()
+        except (ValueError, IndexError):
+            limit = 10
+            query = user_input
+
+        if not query:
+            await update.message.reply_text(
+                "Укажи уточнение в формате: topic [кол-во].\nПример: platform labor 10",
+                reply_markup=get_main_keyboard()
+            )
+            return
+
+        await run_refine(update, context, query, limit)
+        return
+
+    if context.user_data.get(PENDING_ACTION_KEY) == PENDING_SUGGEST:
+        context.user_data.pop(PENDING_ACTION_KEY, None)
+        await run_suggest(update, context, user_input)
+        return
+
+    if context.user_data.get(PENDING_ACTION_KEY) == PENDING_ANALYZE:
+        context.user_data.pop(PENDING_ACTION_KEY, None)
+        if len(user_input) < 3:
+            await update.message.reply_text(
+                "Слишком короткая тема. Пример: platform capitalism",
+                reply_markup=get_main_keyboard()
+            )
+            return
+        await run_analyze(update, context, user_input)
+        return
+
+    if context.user_data.get(PENDING_ACTION_KEY) == PENDING_SUMMARY:
+        context.user_data.pop(PENDING_ACTION_KEY, None)
+        await run_summary(update, context, user_input)
+        return
+
+    if context.user_data.get(PENDING_ACTION_KEY) == PENDING_EXPORT:
+        context.user_data.pop(PENDING_ACTION_KEY, None)
+        await run_export(update, context, user_input)
         return
 
     if len(user_input) < 3:
