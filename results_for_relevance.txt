@@ -1,0 +1,78 @@
+============================================================
+1. Техническая тема | запрос: LLM agents
+============================================================
+ 1. [релев? Y/N] ExpeL: LLM Agents Are Experiential Learners (2024) [OpenAlex]
+ 2. [релев? Y/N] Designing Heterogeneous LLM Agents for Financial Sentiment Analysis (2024) [OpenAlex]
+ 3. [релев? Y/N] LLM Agents for Education: Advances and Applications (2025) [OpenAlex]
+ 4. [релев? Y/N] Multi-Agent Collaboration: Harnessing the Power of Intelligent LLM Agents (2023) [OpenAlex]
+ 5. [релев? Y/N] Editable Scene Simulation for Autonomous Driving via Collaborative LLM-Agents (2024) [OpenAlex]
+ 6. [релев? Y/N] Understanding the planning of LLM agents: A survey (2024) [OpenAlex]
+ 7. [релев? Y/N] On protecting the data privacy of Large Language Models (LLMs) and LLM agents: A literatur (2025) [OpenAlex]
+ 8. [релев? Y/N] VELMA: Verbalization Embodiment of LLM Agents for Vision and Language Navigation in Street (2024) [OpenAlex]
+ 9. [релев? Y/N] AIoT Smart Home via Autonomous LLM Agents (2024) [OpenAlex]
+10. [релев? Y/N] Distributing Accountability, Not Capability: Phase Separation and the LLM Workflow Quadran (2022) [OpenAlex]
+
+============================================================
+2. Гуманитарная тема | запрос: digital capitalism
+============================================================
+ 1. [релев? Y/N] How platforms govern: Social regulation in digital capitalism (2023) [OpenAlex]
+ 2. [релев? Y/N] Epilogue: Rethinking digital literacy: Media education in the age of digital capitalism (2020) [OpenAlex]
+ 3. [релев? Y/N] The New Patriarchs of Digital Capitalism (2021) [OpenAlex]
+ 4. [релев? Y/N] The Solutionist Ethic and the Spirit of Digital Capitalism (2023) [OpenAlex]
+ 5. [релев? Y/N] The disconnection turn: Three facets of disconnective work in post-digital capitalism (2021) [OpenAlex]
+ 6. [релев? Y/N] Digital Capitalism (2021) [OpenAlex]
+ 7. [релев? Y/N] De-territorialized digital capitalism and the predicament of the nation-state: Netflix in  (2020) [OpenAlex]
+ 8. [релев? Y/N] Too Smart: How Digital Capitalism Is Extracting Data, Controlling Our Lives, and Taking ov (2020) [OpenAlex]
+ 9. [релев? Y/N] Markets and power in digital capitalism (2024) [OpenAlex]
+10. [релев? Y/N] Digital Capitalism and Distributive Forces (2022) [OpenAlex]
+
+============================================================
+3. Классика по цитированиям | запрос: Kant metaphysics
+============================================================
+ 1. [релев? Y/N] Empiricism and the philosophy of mind (1997) [OpenAlex]
+ 2. [релев? Y/N] The descent of man, and selection in relation to sex (1872) [OpenAlex]
+ 3. [релев? Y/N] Social Science Research: Principles, Methods and Practices (2019) [OpenAlex]
+ 4. [релев? Y/N] Kant: The Metaphysics of Morals (1996) [OpenAlex]
+ 5. [релев? Y/N] The agent-structure problem in international relations theory (1987) [OpenAlex]
+ 6. [релев? Y/N] The Problems of Philosophy (1999) [OpenAlex]
+ 7. [релев? Y/N] Groundwork for the Metaphysics of Morals (2006) [OpenAlex]
+ 8. [релев? Y/N] Consciousness Explained (1993) [OpenAlex]
+ 9. [релев? Y/N] Love and knowledge: Emotion in feminist epistemology (1989) [OpenAlex]
+10. [релев? Y/N] The Sources of Normativity (1996) [OpenAlex]
+
+============================================================
+4. Обзорные статьи | запрос: transformer architecture
+============================================================
+ 1. [релев? Y/N] Transformers in medical imaging: A survey (2023) [OpenAlex]
+ 2. [релев? Y/N] AI-Assisted Pipeline for Dynamic Generation of Trustworthy Health Supplement Content at Sc (2018) [OpenAlex]
+ 3. [релев? Y/N] Transformers in Remote Sensing: A Survey (2023) [OpenAlex]
+ 4. [релев? Y/N] A Survey of Visual Transformers (2023) [OpenAlex]
+ 5. [релев? Y/N] Deep learning for ECG Arrhythmia detection and classification: an overview of progress for (2023) [OpenAlex]
+ 6. [релев? Y/N] Transformer-Based Visual Segmentation: A Survey (2024) [OpenAlex]
+ 7. [релев? Y/N] End-to-End Transformer-Based Models in Textual-Based NLP (2023) [OpenAlex]
+ 8. [релев? Y/N] Semantic segmentation using Vision Transformers: A survey (2023) [OpenAlex]
+ 9. [релев? Y/N] Vision Transformers in medical computer vision—A contemplative retrospection (2023) [OpenAlex]
+10. [релев? Y/N] A survey of techniques for optimizing transformer inference (2023) [OpenAlex]
+
+============================================================
+5. Анализ актуальности | запрос: LLM agents
+============================================================
+ 1. {'verdict': 'Тема хорошо изучена — нужна узкая специализация', 'score': 2, 'signals': ['резкий рост публикаций в последний год']}
+
+============================================================
+6. Семантический поиск (Multi-Query) | запрос: neural attention
+============================================================
+ 1. [релев? Y/N] Neural Mechanisms of Selective Visual Attention (1995) [OpenAlex]
+ 2. [релев? Y/N] A General Survey on Attention Mechanisms in Deep Learning (2021) [OpenAlex]
+ 3. [релев? Y/N] A review on the attention mechanism of deep learning (2021) [OpenAlex]
+ 4. [релев? Y/N] External noise distinguishes attention mechanisms (1998) [OpenAlex]
+ 5. [релев? Y/N] Attention mechanisms in computer vision: A survey (2022) [OpenAlex]
+
+============================================================
+7. Изоляция пользователей | запрос: —
+============================================================
+ 1. {'user_A_papers': 10, 'user_B_papers': 0, 'isolated': True}
+
+============================================================
+10. Экспорт в CSV | запрос: (коллекция п.6)
+============================================================
